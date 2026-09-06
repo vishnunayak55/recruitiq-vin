@@ -153,7 +153,12 @@ const callGemini = async (prompt: string): Promise<string> => {
         ],
         generationConfig: {
           responseMimeType: 'application/json',
-          temperature: 0.1,
+          // FIX 2: Changed from 0.1 to 0.
+          // temperature: 0 means fully deterministic (greedy decoding).
+          // The same resume text will now always produce the exact same score.
+          // At 0.1 the model still had enough randomness to shift scores
+          // by 2-16 points between runs (e.g. 75 vs 91, 82 vs 84).
+          temperature: 0,
           maxOutputTokens: 8192,
         },
       });
