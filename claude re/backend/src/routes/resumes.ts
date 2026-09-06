@@ -67,6 +67,28 @@ router.post('/upload', authenticate, upload.single('resume'), async (req: Authen
       });
     }
 
+    // FIX 3: Check if this exact filename was already analyzed by this user.
+    // If yes, return the cached result immediately — don't re-run AI and
+    // don't burn another free analysis slot. This stops duplicate rows
+    // appearing in Resume History for the same file.
+    const { data: existingAnalysis } = await supabase
+      .from('resume_analyses')
+      .select('*')
+      .eq('user_id', req.user!.id)
+      .eq('file_name', req.file.originalname)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (existingAnalysis) {
+      console.log(`♻️  Returning cached analysis for "${req.file.originalname}"`);
+      return res.status(200).json({
+        success: true,
+        analysis: normalize(existingAnalysis),
+        cached: true,
+      });
+    }
+
     // Extract text
     let extractedText: string;
     try {
