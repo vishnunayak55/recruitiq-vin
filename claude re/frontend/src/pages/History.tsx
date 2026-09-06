@@ -4,6 +4,8 @@ import { FileText, ExternalLink, Trash2, Loader2, Search, ArrowUpDown, Plus } fr
 import api from '../lib/api';
 import toast from 'react-hot-toast';
 
+const PER = 10;
+
 const History = () => {
   const [analyses, setAnalyses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -11,23 +13,48 @@ const History = () => {
   const [sort, setSort] = useState<'date' | 'score'>('date');
   const [deleting, setDeleting] = useState<string | null>(null);
   const [page, setPage] = useState(1);
-  const PER = 10;
 
   useEffect(() => {
-    api.get('/resumes').then(({ data }) => setAnalyses(data.analyses || '')).catch(() => toast.error('Failed to load')).finally(() => setLoading(false));
+    api.get('/resumes')
+      .then(({ data }) => {
+        const all: any[] = data.analyses || [];
+
+        // FIX: Deduplicate by file_name — keep only the latest entry per filename.
+        // This prevents users from seeing duplicate rows in history even if
+        // duplicate analyses exist in the DB from before the cache fix was deployed.
+        const seen = new Map<string, any>();
+        for (const a of all) {
+          const existing = seen.get(a.file_name);
+          if (!existing || new Date(a.created_at) > new Date(existing.created_at)) {
+            seen.set(a.file_name, a);
+          }
+        }
+        setAnalyses(Array.from(seen.values()));
+      })
+      .catch(() => toast.error('Failed to load'))
+      .finally(() => setLoading(false));
   }, []);
 
   const handleDelete = async (id: string) => {
     if (!window.confirm('Delete this analysis?')) return;
     setDeleting(id);
-    try { await api.delete(`/resumes/${id}`); setAnalyses(p => p.filter(a => a.id !== id)); toast.success('Deleted'); }
-    catch { toast.error('Delete failed'); }
-    finally { setDeleting(null); }
+    try {
+      await api.delete(`/resumes/${id}`);
+      setAnalyses(p => p.filter(a => a.id !== id));
+      toast.success('Deleted');
+    } catch {
+      toast.error('Delete failed');
+    } finally {
+      setDeleting(null);
+    }
   };
 
   const filtered = analyses
     .filter(a => a.file_name.toLowerCase().includes(search.toLowerCase()))
-    .sort((a, b) => sort === 'score' ? b.overall_score - a.overall_score : new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    .sort((a, b) => sort === 'score'
+      ? b.overall_score - a.overall_score
+      : new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
 
   const paged = filtered.slice((page - 1) * PER, page * PER);
   const pages = Math.ceil(filtered.length / PER);
@@ -63,7 +90,9 @@ const History = () => {
 
         <div className="glass rounded-2xl overflow-hidden">
           {loading ? (
-            <div className="flex items-center justify-center py-20"><Loader2 size={24} className="text-indigo-400 animate-spin" /></div>
+            <div className="flex items-center justify-center py-20">
+              <Loader2 size={24} className="text-indigo-400 animate-spin" />
+            </div>
           ) : paged.length === 0 ? (
             <div className="text-center py-20 text-zinc-500 text-sm">
               {search ? 'No results match your search.' : 'No analyses yet. Upload your first resume!'}
@@ -89,8 +118,11 @@ const History = () => {
                           {a.ats_compatible ? 'ATS ✓' : 'ATS ✗'}
                         </span>
                       )}
-                      <Link to={`/report/${a.id}`} className="p-2 text-zinc-500 hover:text-indigo-400 rounded-lg hover:bg-white/5 transition-colors"><ExternalLink size={14} /></Link>
-                      <button onClick={() => handleDelete(a.id)} disabled={deleting === a.id} className="p-2 text-zinc-600 hover:text-red-400 rounded-lg hover:bg-red-500/5 transition-colors disabled:opacity-40">
+                      <Link to={`/report/${a.id}`} className="p-2 text-zinc-500 hover:text-indigo-400 rounded-lg hover:bg-white/5 transition-colors">
+                        <ExternalLink size={14} />
+                      </Link>
+                      <button onClick={() => handleDelete(a.id)} disabled={deleting === a.id}
+                        className="p-2 text-zinc-600 hover:text-red-400 rounded-lg hover:bg-red-500/5 transition-colors disabled:opacity-40">
                         {deleting === a.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
                       </button>
                     </div>
