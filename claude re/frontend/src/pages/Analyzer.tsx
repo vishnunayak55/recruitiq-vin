@@ -25,6 +25,11 @@ const Analyzer = () => {
   const [jobLoading, setJobLoading] = useState(false);
   const [jobMatch, setJobMatch] = useState<any>(null);
 
+  // FIX 1: This ref prevents double-submit race condition.
+  // Unlike useState, setting a ref is synchronous, so a second click
+  // is blocked immediately before React even re-renders.
+  const isSubmitting = useRef(false);
+
   const validate = (f: File) => {
     const ok = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword'];
     if (!ok.includes(f.type) && !f.name.match(/\.(pdf|docx|doc)$/i)) { toast.error('Only PDF and DOCX supported'); return false; }
@@ -40,9 +45,17 @@ const Analyzer = () => {
   const handleUpload = async () => {
     if (!file) return;
     if (!user) { navigate('/login'); return; }
+
+    // FIX 1: Block any second call before the first one finishes.
+    // isSubmitting.current is set synchronously so it takes effect immediately,
+    // unlike setUploading(true) which only applies after React re-renders.
+    if (isSubmitting.current) return;
+    isSubmitting.current = true;
+
     if (user.plan === 'free' && user.analyses_count >= 2) {
       setUpgradeRequired(true);
       setError(`Free plan limit reached (${user.analyses_count}/2). Upgrade to Pro for unlimited analyses.`);
+      isSubmitting.current = false;
       return;
     }
     setUploading(true); setError(''); setUpgradeRequired(false); setStep(0); simulateSteps();
@@ -56,7 +69,11 @@ const Analyzer = () => {
       const msg = e?.response?.data?.error || 'Analysis failed. Please try again.';
       setError(msg); setUpgradeRequired(!!e?.response?.data?.upgradeRequired);
       toast.error(e?.response?.data?.upgradeRequired ? 'Free plan limit reached' : msg);
-    } finally { setUploading(false); }
+    } finally {
+      setUploading(false);
+      // FIX 1: Reset so user can try again after a failed upload.
+      isSubmitting.current = false;
+    }
   };
 
   const handleJobMatch = async () => {
