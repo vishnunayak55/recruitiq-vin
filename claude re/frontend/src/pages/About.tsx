@@ -61,11 +61,7 @@ const About = () => {
 
         {/* Tech stack */}
         <div className="bg-white/[0.02] border border-white/8 rounded-2xl p-8 mb-8">
-          <h2 className="text-xl font-bold text-white mb-4">Built With</h2>
-          <div className="flex flex-wrap gap-3">
-            {['React + TypeScript', 'Node.js + Express', 'PostgreSQL', 'Claude AI (Anthropic)', 'Razorpay', 'Tailwind CSS', 'Vite'].map((tech) => (
-              <span key={tech} className="px-3 py-1.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-sm rounded-lg">
-                {tech}
+         
               </span>
             ))}
           </div>
@@ -74,7 +70,7 @@ const About = () => {
         {/* CTA */}
         <div className="text-center">
           <h2 className="text-2xl font-bold text-white mb-4">Ready to get started?</h2>
-          <p className="text-zinc-400 mb-6">Join thousands of job seekers who've improved their resume with RecruitIQ.</p>
+         
           <div className="flex gap-4 justify-center">
             <Link to="/analyzer" className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-xl transition-colors">
               Analyze My Resume
