@@ -6,7 +6,7 @@ import api from '../lib/api';
 import toast from 'react-hot-toast';
 
 const Dashboard = () => {
-  const { user, refreshUser } = useAuth();
+  const { user } = useAuth();
   const [analyses, setAnalyses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -14,7 +14,7 @@ const Dashboard = () => {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [{ data }] = await Promise.all([api.get('/resumes'), refreshUser()]);
+      const { data } = await api.get('/resumes');
       setAnalyses(data.analyses || []);
     } catch { toast.error('Failed to load dashboard'); }
     finally { setLoading(false); }
