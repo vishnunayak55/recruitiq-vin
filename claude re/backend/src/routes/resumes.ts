@@ -1,5 +1,6 @@
 import { Router, Response } from 'express';
 import multer from 'multer';
+import crypto from 'crypto';
 import { authenticate, AuthenticatedRequest } from '../middleware/auth';
 import { supabase } from '../utils/db';
 import { extractTextFromBuffer, validateResumeText } from '../services/resumeParser';
@@ -40,11 +41,9 @@ const normalize = (a: any) => ({
   deep_score: a.deep_score ? safeParse(a.deep_score, null) : null,
 });
 
-// Check which optional columns exist (graceful degradation)
-const hasColumn = async (table: string, column: string): Promise<boolean> => {
-  const { error } = await supabase.from(table).select(column).limit(1);
-  return !error;
-};
+// SHA-256 hash helper
+const hashBuffer = (buf: Buffer): string =>
+  crypto.createHash('sha256').update(buf).digest('hex');
 
 // POST /api/resumes/upload
 router.post('/upload', authenticate, upload.single('resume'), async (req: AuthenticatedRequest, res: Response) => {
@@ -67,29 +66,49 @@ router.post('/upload', authenticate, upload.single('resume'), async (req: Authen
       });
     }
 
-    // FIX 3: Check if this exact filename was already analyzed by this user.
-    // If yes, return the cached result immediately — don't re-run AI and
-    // don't burn another free analysis slot. This stops duplicate rows
-    // appearing in Resume History for the same file.
-    const { data: existingAnalysis } = await supabase
-      .from('resume_analyses')
-      .select('*')
+    // ── Duplicate detection (two-layer) ─────────────────────────────────────
+    //
+    // Layer 1: file_hash — exact byte match. Requires SQL migration.
+    //          If column missing, returns no rows and falls through silently.
+    //
+    // Layer 2: text_hash — content match. Works without migration.
+    //          Same resume content = same hash = same result returned.
+    //          This is what guarantees consistent scores for the same resume.
+    //
+    // Both layers are per-user — users never see each other's analyses.
+    // ────────────────────────────────────────────────────────────────────────
+
+    const fileHash = hashBuffer(req.file.buffer);
+
+    // Layer 1 — file hash
+    const { data: existingByFileHash } = await supabase
+      .from('resumes')
+      .select('id')
       .eq('user_id', req.user!.id)
-      .eq('file_name', req.file.originalname)
-      .order('created_at', { ascending: false })
-      .limit(1)
+      .eq('file_hash', fileHash)
       .maybeSingle();
 
-    if (existingAnalysis) {
-      console.log(`♻️  Returning cached analysis for "${req.file.originalname}"`);
-      return res.status(200).json({
-        success: true,
-        analysis: normalize(existingAnalysis),
-        cached: true,
-      });
+    if (existingByFileHash) {
+      const { data: existingAnalysis } = await supabase
+        .from('resume_analyses')
+        .select('*')
+        .eq('resume_id', existingByFileHash.id)
+        .eq('user_id', req.user!.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (existingAnalysis) {
+        return res.status(200).json({
+          success: true,
+          duplicate: true,
+          message: 'You have already analyzed this resume. Returning your existing result.',
+          analysis: normalize(existingAnalysis),
+        });
+      }
     }
 
-    // Extract text
+    // Layer 2 — text content hash (extract text early for this check)
     let extractedText: string;
     try {
       extractedText = await extractTextFromBuffer(req.file.buffer, req.file.mimetype);
@@ -98,24 +117,75 @@ router.post('/upload', authenticate, upload.single('resume'), async (req: Authen
       return res.status(422).json({ error: e.message });
     }
 
-    // Save resume record
-    const { data: resumeRow, error: rErr } = await supabase
+    const textHash = hashBuffer(Buffer.from(extractedText.trim().toLowerCase()));
+
+    const { data: existingByTextHash } = await supabase
       .from('resumes')
-      .insert({
-        user_id: req.user!.id,
-        file_name: req.file.originalname,
-        file_size: req.file.size,
-        extracted_text: extractedText,
-      })
+      .select('id')
+      .eq('user_id', req.user!.id)
+      .eq('text_hash', textHash)
+      .maybeSingle();
+
+    if (existingByTextHash) {
+      const { data: existingAnalysis } = await supabase
+        .from('resume_analyses')
+        .select('*')
+        .eq('resume_id', existingByTextHash.id)
+        .eq('user_id', req.user!.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (existingAnalysis) {
+        return res.status(200).json({
+          success: true,
+          duplicate: true,
+          message: 'You have already analyzed this resume. Returning your existing result.',
+          analysis: normalize(existingAnalysis),
+        });
+      }
+    }
+
+    // ── Save resume row ──────────────────────────────────────────────────────
+    const resumeInsertData: any = {
+      user_id: req.user!.id,
+      file_name: req.file.originalname,
+      file_size: req.file.size,
+      extracted_text: extractedText,
+    };
+
+    // Try inserting with both hashes; fall back gracefully if columns missing
+    let resumeRow: any = null;
+
+    const { data: rowFull, error: errFull } = await supabase
+      .from('resumes')
+      .insert({ ...resumeInsertData, file_hash: fileHash, text_hash: textHash })
       .select('id')
       .single();
 
-    if (rErr || !resumeRow) {
-      console.error('Resume insert error:', rErr);
-      throw rErr;
+    if (errFull) {
+      const { data: rowFileHash, error: errFileHash } = await supabase
+        .from('resumes')
+        .insert({ ...resumeInsertData, file_hash: fileHash })
+        .select('id')
+        .single();
+
+      if (errFileHash) {
+        const { data: rowNoHash, error: errNoHash } = await supabase
+          .from('resumes')
+          .insert(resumeInsertData)
+          .select('id')
+          .single();
+        if (errNoHash || !rowNoHash) throw errNoHash;
+        resumeRow = rowNoHash;
+      } else {
+        resumeRow = rowFileHash;
+      }
+    } else {
+      resumeRow = rowFull;
     }
 
-    // AI Analysis
+    // ── AI Analysis ──────────────────────────────────────────────────────────
     let aiResult: any;
     try {
       aiResult = await aiProvider.analyzeResume(extractedText);
@@ -132,11 +202,10 @@ router.post('/upload', authenticate, upload.single('resume'), async (req: Authen
       return res.status(503).json({ error: 'AI returned an invalid response. Please try again.' });
     }
 
-    // Deep score — non-blocking, ignore failure
+    // Deep score — non-blocking, best effort
     let deepScore: any = null;
     try { deepScore = await aiProvider.generateResumeScore(extractedText); } catch {}
 
-    // Build insert object with only base columns first
     const insertData: any = {
       user_id: req.user!.id,
       resume_id: resumeRow.id,
@@ -159,14 +228,8 @@ router.post('/upload', authenticate, upload.single('resume'), async (req: Authen
       missing_skills: [],
     };
 
-    // Add optional columns only if they exist in schema
-    // (Run SUPABASE_UPDATE.sql to add them)
-    if (deepScore) {
-      insertData.deep_score = deepScore;
-    }
+    if (deepScore) insertData.deep_score = deepScore;
 
-    // Try with all optional columns, fall back without them if schema error
-    let analysisRow: any = null;
     const tryInsert = async (data: any) => {
       const { data: row, error } = await supabase
         .from('resume_analyses')
@@ -176,16 +239,13 @@ router.post('/upload', authenticate, upload.single('resume'), async (req: Authen
       return { row, error };
     };
 
-    // First attempt: full insert
     let { row, error: aErr } = await tryInsert({
       ...insertData,
       interview_questions: [],
       career_roadmap: null,
     });
 
-    // If schema error on optional columns, retry without them
     if (aErr && aErr.code === 'PGRST204') {
-      console.warn('Optional columns missing, inserting without them. Run SUPABASE_UPDATE.sql to add them.');
       const fallback = { ...insertData };
       delete fallback.deep_score;
       const retry = await tryInsert(fallback);
@@ -198,8 +258,6 @@ router.post('/upload', authenticate, upload.single('resume'), async (req: Authen
       throw aErr;
     }
 
-    analysisRow = row;
-
     // Increment analyses count
     await supabase
       .from('users')
@@ -208,7 +266,8 @@ router.post('/upload', authenticate, upload.single('resume'), async (req: Authen
 
     res.status(201).json({
       success: true,
-      analysis: normalize(analysisRow),
+      duplicate: false,
+      analysis: normalize(row),
     });
   } catch (e: any) {
     console.error('Upload error:', e);
@@ -342,7 +401,6 @@ router.post('/:id/interview-questions', authenticate, async (req: AuthenticatedR
       return res.status(503).json({ error: 'Failed to generate questions. Please try again.' });
     }
 
-    // Try to save — ignore if column missing
     try {
       await supabase
         .from('resume_analyses')
@@ -389,7 +447,6 @@ router.post('/:id/career-roadmap', authenticate, async (req: AuthenticatedReques
       return res.status(503).json({ error: 'Failed to generate roadmap. Please try again.' });
     }
 
-    // Try to save — ignore if column missing
     try {
       await supabase
         .from('resume_analyses')
