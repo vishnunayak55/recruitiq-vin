@@ -48,9 +48,10 @@ const DemoAnalysis = () => (
   <div className="relative w-full max-w-3xl mx-auto">
     <div className="absolute -inset-4 bg-gradient-to-r from-indigo-500/10 via-violet-500/8 to-blue-500/10 blur-3xl rounded-3xl" />
     <div className="relative glass rounded-2xl overflow-hidden shadow-2xl" style={{ boxShadow: '0 0 60px rgba(99,102,241,0.12)' }}>
+      {/* Browser chrome */}
       <div className="flex items-center gap-2 px-4 py-3 border-b border-white/5 bg-white/[0.015]">
         <div className="flex gap-1.5">
-          {['bg-red-500/50','bg-yellow-500/50','bg-emerald-500/50'].map(c => (
+          {(['bg-red-500/50','bg-yellow-500/50','bg-emerald-500/50'] as string[]).map(c => (
             <div key={c} className={`w-2.5 h-2.5 rounded-full ${c}`} />
           ))}
         </div>
@@ -113,6 +114,7 @@ const DemoAnalysis = () => (
   </div>
 );
 
+// Only shows when real data crosses thresholds — no fake numbers ever shown
 const LiveStats = ({ stats, loading }: { stats: Stats; loading: boolean }) => {
   if (loading) return null;
   if (stats.registeredUsers === null || stats.resumeAnalyses === null) return null;
@@ -142,7 +144,7 @@ const SectionLabel = ({ children }: { children: React.ReactNode }) => (
 
 const FEATURES = [
   { icon: <Target size={18} className="text-indigo-400"/>,       title: 'ATS Score Analysis', desc: 'Deep 6-dimension scoring across keywords, skills, experience, formatting, education, and job relevance.', badge: 'All Plans' },
-  { icon: <MessageSquare size={18} className="text-violet-400"/>, title: 'AI Interview Prep',  desc: 'Get 4 personalized interview questions on Pro, 8 on Premium — tailored to your resume and target role.',  badge: 'Pro & Premium' },
+  { icon: <MessageSquare size={18} className="text-violet-400"/>, title: 'AI Interview Prep',  desc: 'Get personalized interview questions tailored to your resume and target role.',                             badge: 'Pro & Premium' },
   { icon: <Map size={18} className="text-blue-400"/>,             title: 'Career Roadmap',     desc: 'AI-generated step-by-step roadmap from your current level to your target role, with timelines.',           badge: 'Pro & Premium' },
   { icon: <TrendingUp size={18} className="text-emerald-400"/>,   title: 'Job Match Analysis', desc: 'Paste any job description and get an instant match score with a full skills-gap breakdown.',               badge: 'All Plans' },
   { icon: <Download size={18} className="text-cyan-400"/>,        title: 'PDF Report Export',  desc: 'Export your complete analysis as a professional PDF report to share with mentors or track progress.',       badge: 'All Plans' },
@@ -156,6 +158,25 @@ const CHECKS = [
   { icon: <Layers size={16} className="text-emerald-400"/>,   title: 'Experience',    desc: 'The clarity and impact of your experience and project descriptions.' },
   { icon: <FileText size={16} className="text-cyan-400"/>,    title: 'Formatting',    desc: 'Formatting issues that can hurt readability or ATS compatibility.' },
   { icon: <Target size={16} className="text-orange-400"/>,    title: 'Job Relevance', desc: 'How closely your resume matches the target role.' },
+];
+
+// ── Use cases — NO fake testimonials, just honest descriptions ──────────────
+const USE_CASES = [
+  {
+    icon: <FileText size={15} className="text-indigo-400" />,
+    title: 'Fresh Graduates',
+    desc: "Get feedback on your resume before your first application — find out which keywords and skills you're missing for the roles you want.",
+  },
+  {
+    icon: <TrendingUp size={15} className="text-violet-400" />,
+    title: 'Active Job Seekers',
+    desc: "Not getting callbacks? RecruitIQ shows you exactly what ATS systems flag before your resume reaches a recruiter.",
+  },
+  {
+    icon: <Map size={15} className="text-blue-400" />,
+    title: 'Career Changers',
+    desc: "See the skill gaps between where you are and where you want to go — then get a roadmap to close them.",
+  },
 ];
 
 const Landing = () => {
@@ -182,13 +203,14 @@ const Landing = () => {
   return (
     <div className="min-h-screen bg-[#080810] text-white overflow-x-hidden">
 
+      {/* Ambient background glows */}
       <div className="fixed inset-0 pointer-events-none" aria-hidden>
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[900px] h-[700px] bg-indigo-600/5 rounded-full blur-3xl" />
         <div className="absolute top-1/2 left-0 w-[500px] h-[500px] bg-violet-600/4 rounded-full blur-3xl" />
         <div className="absolute bottom-1/4 right-0 w-[400px] h-[400px] bg-blue-600/3 rounded-full blur-3xl" />
       </div>
 
-      {/* HERO */}
+      {/* ── HERO ──────────────────────────────────────────────────────────────── */}
       <section className="relative pt-28 sm:pt-36 pb-16 px-4">
         <div className="max-w-4xl mx-auto text-center">
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-indigo-500/10 border border-indigo-500/20 rounded-full text-xs text-indigo-300 font-medium mb-8">
@@ -218,10 +240,10 @@ const Landing = () => {
         </div>
       </section>
 
-      {/* LIVE STATS */}
+      {/* ── LIVE STATS (only shown when real data crosses thresholds) ─────────── */}
       <LiveStats stats={stats} loading={statsLoading} />
 
-      {/* ANALYZER CTA */}
+      {/* ── UPLOAD CTA ────────────────────────────────────────────────────────── */}
       <section className="py-20 px-4">
         <div className="max-w-2xl mx-auto">
           <div className="text-center mb-8">
@@ -250,27 +272,27 @@ const Landing = () => {
               <div className="flex flex-wrap items-center justify-center gap-5 mt-6 text-zinc-600 text-xs">
                 <span className="flex items-center gap-1.5"><FileText size={11} /> PDF recommended</span>
                 <span className="flex items-center gap-1.5"><Zap size={11} /> AI-powered</span>
-                <span className="flex items-center gap-1.5"><Lock size={11} /> Secure</span>
+                <span className="flex items-center gap-1.5"><Lock size={11} /> Your data stays private</span>
               </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* HOW IT WORKS */}
+      {/* ── HOW IT WORKS ──────────────────────────────────────────────────────── */}
       <section className="py-20 px-4">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-14">
             <SectionLabel><BrainCircuit size={11} /> Process</SectionLabel>
             <h2 className="text-3xl sm:text-4xl font-black text-white mb-3">How RecruitIQ Works</h2>
-            <p className="text-zinc-400 text-sm sm:text-base">From resume upload to a stronger application in four simple steps.</p>
+            <p className="text-zinc-400 text-sm sm:text-base">From resume upload to a stronger application in four steps.</p>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
             {([
-              { n:'01', t:'Upload',  d:'Upload your resume to RecruitIQ.',                                                            icon:<FileText size={19}/> },
-              { n:'02', t:'Analyze', d:'AI evaluates your resume across ATS, keywords, skills, experience, formatting and relevance.',  icon:<BrainCircuit size={19}/> },
-              { n:'03', t:'Improve', d:'See exactly what is hurting your resume and get actionable recommendations.',                   icon:<TrendingUp size={19}/> },
-              { n:'04', t:'Apply',   d:'Use the improved resume and prepare for the job with RecruitIQ career tools.',                  icon:<Award size={19}/> },
+              { n:'01', t:'Upload',  d:'Upload your resume PDF to RecruitIQ.',                                                         icon:<FileText size={19}/> },
+              { n:'02', t:'Analyze', d:'AI evaluates your resume across ATS score, keywords, skills, experience, formatting and fit.', icon:<BrainCircuit size={19}/> },
+              { n:'03', t:'Improve', d:'See exactly what is hurting your resume and get clear, actionable recommendations.',           icon:<TrendingUp size={19}/> },
+              { n:'04', t:'Apply',   d:'Use the improved resume and prepare for interviews with RecruitIQ career tools.',              icon:<Award size={19}/> },
             ] as { n:string; t:string; d:string; icon:React.ReactNode }[]).map((s, i) => (
               <div key={s.n} className="relative text-center group">
                 {i < 3 && <div className="hidden md:block absolute top-6 left-[calc(50%+30px)] w-[calc(100%-60px)] h-px bg-gradient-to-r from-indigo-500/25 to-transparent" />}
@@ -284,7 +306,7 @@ const Landing = () => {
         </div>
       </section>
 
-      {/* SEE IT IN ACTION */}
+      {/* ── SEE IT IN ACTION ──────────────────────────────────────────────────── */}
       <section className="py-20 px-4">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-12">
@@ -301,7 +323,7 @@ const Landing = () => {
         </div>
       </section>
 
-      {/* WHAT RECRUITIQ CHECKS */}
+      {/* ── WHAT RECRUITIQ CHECKS ─────────────────────────────────────────────── */}
       <section className="py-20 px-4">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-12">
@@ -320,13 +342,13 @@ const Landing = () => {
         </div>
       </section>
 
-      {/* FEATURES */}
+      {/* ── FEATURES ──────────────────────────────────────────────────────────── */}
       <section className="py-20 px-4">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-14">
             <SectionLabel><Zap size={11} /> Features</SectionLabel>
             <h2 className="text-3xl sm:text-4xl font-black text-white mb-3">Everything You Need for Your Next Application</h2>
-            <p className="text-zinc-400 text-sm sm:text-base">One platform to analyze, improve, and prepare for your next opportunity.</p>
+            <p className="text-zinc-400 text-sm sm:text-base">One platform to analyze, improve, and prepare.</p>
           </div>
           <div className="grid md:grid-cols-3 gap-4">
             {FEATURES.map(f => (
@@ -343,7 +365,7 @@ const Landing = () => {
         </div>
       </section>
 
-      {/* BEFORE / AFTER */}
+      {/* ── BEFORE / AFTER ────────────────────────────────────────────────────── */}
       <section className="py-20 px-4">
         <div className="max-w-3xl mx-auto">
           <div className="text-center mb-12">
@@ -392,7 +414,29 @@ const Landing = () => {
         </div>
       </section>
 
-      {/* TRUST & PRIVACY */}
+      {/* ── WHO IT'S FOR (replaces fake testimonials) ─────────────────────────── */}
+      <section className="py-16 px-4">
+        <div className="max-w-4xl mx-auto text-center">
+          <SectionLabel><Target size={11} /> Who It's For</SectionLabel>
+          <h2 className="text-2xl font-black text-white mb-3">Built for Students and Job Seekers</h2>
+          <p className="text-zinc-500 text-sm max-w-lg mx-auto mb-10">
+            Designed to help students, freshers, and job seekers understand what is holding their resumes back — before they apply.
+          </p>
+          <div className="grid sm:grid-cols-3 gap-4 text-left">
+            {USE_CASES.map(u => (
+              <div key={u.title} className="glass rounded-xl p-5">
+                <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center mb-3">
+                  {u.icon}
+                </div>
+                <h3 className="text-white font-semibold text-sm mb-2">{u.title}</h3>
+                <p className="text-zinc-500 text-xs leading-relaxed">{u.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── TRUST & PRIVACY ───────────────────────────────────────────────────── */}
       <section className="py-20 px-4">
         <div className="max-w-2xl mx-auto">
           <div className="rounded-2xl p-8 sm:p-10 text-center border border-white/8 bg-white/[0.015]">
@@ -400,9 +444,12 @@ const Landing = () => {
               <Shield size={19} className="text-indigo-400" />
             </div>
             <h2 className="text-2xl font-black text-white mb-3">Your Resume. Your Data.</h2>
-            <p className="text-zinc-400 text-sm leading-relaxed mb-6 max-w-md mx-auto">
-              RecruitIQ is built with your privacy in mind. Your resume is used only to provide the analysis you request.
-              Analysis results are stored in your account and you can delete them at any time from your history.
+            <p className="text-zinc-400 text-sm leading-relaxed mb-4 max-w-md mx-auto">
+              Your resume is used only to generate the analysis you request. Results are stored in your account
+              and you can delete them at any time from your history.
+            </p>
+            <p className="text-zinc-600 text-xs mb-6 max-w-sm mx-auto">
+              RecruitIQ does not sell or share your resume data with third parties.
             </p>
             <div className="flex justify-center gap-6">
               <Link to="/about" className="text-zinc-500 hover:text-zinc-300 transition-colors text-xs underline underline-offset-4">Privacy Policy</Link>
@@ -412,34 +459,7 @@ const Landing = () => {
         </div>
       </section>
 
-      {/* SOCIAL PROOF */}
-      <section className="py-16 px-4">
-        <div className="max-w-4xl mx-auto text-center">
-          <h2 className="text-2xl font-black text-white mb-3">Built for Students and Job Seekers</h2>
-          <p className="text-zinc-500 text-sm max-w-lg mx-auto mb-10">
-            Designed to help students, freshers, and job seekers understand what is holding their resumes back — before they apply.
-          </p>
-          <div className="grid sm:grid-cols-3 gap-4 text-left">
-            {([
-              { role:'Engineering Graduate', text:'A platform that gives you the feedback a career coach would — powered by AI.' },
-              { role:'First Job Seeker',     text:'Find exactly which keywords and skills your resume is missing for your target role.' },
-              { role:'Career Changer',       text:'Prepare for interviews and map your career path, all in one place.' },
-            ] as { role:string; text:string }[]).map(t => (
-              <div key={t.role} className="glass rounded-xl p-5">
-                <p className="text-zinc-400 text-sm leading-relaxed mb-4">"{t.text}"</p>
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-500/20 to-violet-500/20 border border-white/8 flex items-center justify-center text-zinc-500 text-xs font-bold">
-                    {t.role[0]}
-                  </div>
-                  <span className="text-zinc-500 text-xs">{t.role}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* FINAL CTA */}
+      {/* ── FINAL CTA ─────────────────────────────────────────────────────────── */}
       <section className="py-24 px-4">
         <div className="max-w-xl mx-auto text-center">
           <div className="rounded-3xl p-10 sm:p-14 relative overflow-hidden"
@@ -465,7 +485,7 @@ const Landing = () => {
         </div>
       </section>
 
-      {/* FOOTER */}
+      {/* ── FOOTER ────────────────────────────────────────────────────────────── */}
       <footer className="border-t border-white/5 py-10 px-4">
         <div className="max-w-5xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="flex items-center gap-2.5">
