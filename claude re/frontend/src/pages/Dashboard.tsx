@@ -14,8 +14,7 @@ const Dashboard = () => {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      await refreshUser();
-      const { data } = await api.get('/resumes');
+      const [{ data }] = await Promise.all([api.get('/resumes'), refreshUser()]);
       setAnalyses(data.analyses || []);
     } catch { toast.error('Failed to load dashboard'); }
     finally { setLoading(false); }
