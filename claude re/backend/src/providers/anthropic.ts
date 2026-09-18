@@ -13,6 +13,7 @@ export interface AIProvider {
   generateInterviewQuestions(resumeText: string, jobDescription: string, count: number): Promise<any[]>;
   generateCareerRoadmap(resumeText: string, targetRole: string): Promise<any>;
   generateResumeScore(resumeText: string): Promise<any>;
+  generateResumeRewrite(resumeText: string): Promise<any>;
 }
 
 const MODELS = [
@@ -509,6 +510,59 @@ CRITICAL:
 - Return ONLY valid JSON.
 - Quote actual lines from the resume.
 - Do not invent resume content.
+`);
+    return JSON.parse(raw);
+  }
+}
+
+
+  // ==========================================
+  // RESUME REWRITE SUGGESTIONS (PRO)
+  // ==========================================
+  async generateResumeRewrite(resumeText: string): Promise<any> {
+    const raw = await callGemini(`
+You are an expert resume writer. Rewrite the weak bullet points and summary from this resume.
+
+RULES:
+- Use strong action verbs (Developed, Built, Optimized, Led, Achieved, Reduced, Increased)
+- Add metrics and numbers wherever possible (even estimated ones like "~30%")
+- Keep the same meaning but make it sound more impactful
+- Do NOT invent technologies or experience that are not in the resume
+- Rewrite ONLY the weak or vague lines — skip lines that are already strong
+
+RESUME:
+---
+${resumeText.substring(0, 3000)}
+---
+
+Return ONLY valid JSON:
+
+{
+  "rewrites": [
+    {
+      "original": "<exact weak line from the resume>",
+      "rewritten": "<improved version with action verb and metric>",
+      "improvement": "<one line explaining what was improved e.g. Added metric, stronger verb>"
+    }
+  ],
+  "summary_rewrite": {
+    "original": "<original professional summary if present, else null>",
+    "rewritten": "<rewritten summary that is more impactful>"
+  },
+  "score_improvement": "<estimated ATS score improvement e.g. +15 to +25 points>",
+  "total_rewrites": <number of bullet points rewritten>,
+  "tips": [
+    "<one specific tip for this resume>",
+    "<another tip>",
+    "<another tip>"
+  ]
+}
+
+CRITICAL:
+- Return ONLY valid JSON.
+- Only rewrite lines actually present in the resume.
+- Do not invent skills or experience.
+- Minimum 3 rewrites, maximum 10.
 `);
     return JSON.parse(raw);
   }
