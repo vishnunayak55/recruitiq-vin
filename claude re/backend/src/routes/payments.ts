@@ -7,8 +7,7 @@ const router = Router();
 
 // ₹49 = 4900 paise, ₹99 = 9900 paise (Razorpay uses paise)
 const PLANS: Record<string, { amount: number; name: string; display: string }> = {
-  pro:     { amount: 4900,  name: 'Pro',     display: '₹49' },
-  premium: { amount: 9900,  name: 'Premium', display: '₹99' },
+  pro:     { amount: 100,  name: 'Pro',     display: '₹1' },
 };
 
 // POST /api/payments/create-order
