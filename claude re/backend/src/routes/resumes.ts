@@ -452,3 +452,40 @@ router.post('/:id/career-roadmap', authenticate, async (req: AuthenticatedReques
 });
 
 export default router;
+
+// POST /api/resumes/:id/rewrite
+router.post('/:id/rewrite', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { data: user } = await supabase
+      .from('users').select('plan').eq('id', req.user!.id).single();
+
+    if (!user || user.plan === 'free')
+      return res.status(403).json({ error: 'Resume rewrite requires Pro plan', upgradeRequired: true });
+
+    const { data: analysis } = await supabase
+      .from('resume_analyses')
+      .select('*, resumes(extracted_text)')
+      .eq('id', req.params.id)
+      .eq('user_id', req.user!.id)
+      .single();
+
+    if (!analysis) return res.status(404).json({ error: 'Analysis not found' });
+
+    const resumeText = (analysis as any).resumes?.extracted_text || '';
+
+    let rewrite: any;
+    try {
+      rewrite = await aiProvider.generateResumeRewrite(resumeText);
+    } catch (e: any) {
+      console.error('Rewrite AI error:', e);
+      return res.status(503).json({ error: 'Failed to generate rewrite. Please try again.' });
+    }
+
+    res.json({ success: true, rewrite });
+  } catch (e: any) {
+    console.error('Rewrite error:', e);
+    res.status(500).json({ error: 'Failed to generate resume rewrite.' });
+  }
+});
+
+export default router;
