@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Check, Zap, Crown, Loader2, Shield, Star, Lock, Sparkles } from 'lucide-react';
+import { Check, Zap, Loader2, Shield, Star, Lock, Sparkles } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import api from '../lib/api';
 import toast from 'react-hot-toast';
@@ -15,8 +15,6 @@ const loadRazorpay = () => new Promise<boolean>(resolve => {
   s.onerror = () => resolve(false);
   document.body.appendChild(s);
 });
-
-const LEVELS: Record<string, number> = { free: 0, pro: 1, premium: 2 };
 
 const plans = [
   {
@@ -36,7 +34,7 @@ const plans = [
       { text: 'Download report (.txt)', included: true },
       { text: 'Job description matching', included: true },
       { text: 'Interview prep questions', included: false },
-      { text: 'Career roadmap', included: false },
+      { text: 'Career roadmap generator', included: false },
       { text: 'Unlimited analyses', included: false },
     ],
     cta: 'Get Started Free',
@@ -47,7 +45,7 @@ const plans = [
     name: 'Pro',
     price: '₹49',
     period: 'one-time',
-    desc: 'Best for active job seekers',
+    desc: 'Everything you need to land your dream job',
     icon: <Zap size={14} className="text-indigo-400" />,
     highlight: true,
     tag: 'Most Popular',
@@ -65,29 +63,6 @@ const plans = [
     cta: 'Upgrade to Pro — ₹49',
     ctaStyle: 'bg-indigo-600 hover:bg-indigo-500 text-white',
   },
-  {
-    key: 'premium',
-    name: 'Premium',
-    price: '₹99',
-    period: 'one-time',
-    desc: 'Maximum career advantage',
-    icon: <Crown size={14} className="text-yellow-400" />,
-    highlight: false,
-    tag: 'Best Value',
-    features: [
-      { text: 'Everything in Pro', included: true },
-      { text: '8 AI interview questions', included: true },
-      { text: 'Advanced career insights', included: true },
-      { text: 'Resume rewrite suggestions', included: true },
-      { text: 'Multi-job comparison', included: true },
-      { text: 'Salary negotiation tips', included: true },
-      { text: 'Early access to features', included: true },
-      { text: 'Priority support', included: true },
-      { text: 'Lifetime updates', included: true },
-    ],
-    cta: 'Upgrade to Premium — ₹99',
-    ctaStyle: 'bg-white/8 hover:bg-white/12 text-white border border-yellow-500/30',
-  },
 ];
 
 const Pricing = () => {
@@ -99,7 +74,7 @@ const Pricing = () => {
     if (!user) { navigate('/signup'); return; }
     if (user.plan === planKey) { toast.success(`You're already on ${planKey}!`); return; }
     if (planKey === 'free') return;
-    if (LEVELS[planKey] <= LEVELS[user.plan]) { toast.error('Cannot downgrade your plan'); return; }
+    if (user.plan === 'pro') { toast.error('You are already on Pro!'); return; }
 
     setProcessing(planKey);
     try {
@@ -111,6 +86,7 @@ const Pricing = () => {
       }
 
       const { data: order } = await api.post('/payments/create-order', { plan: planKey });
+      console.log('✅ Order created:', order);
 
       const rzp = new window.Razorpay({
         key: order.key_id,
@@ -120,39 +96,45 @@ const Pricing = () => {
         description: `${order.plan_name} Plan — One Time Payment`,
         order_id: order.order_id,
         handler: async (response: any) => {
+          console.log('✅ Payment response received:', response);
           try {
-            await api.post('/payments/verify', {
+            console.log('📤 Calling verify...');
+            const result = await api.post('/payments/verify', {
               razorpay_order_id: response.razorpay_order_id,
               razorpay_payment_id: response.razorpay_payment_id,
               razorpay_signature: response.razorpay_signature,
               plan: planKey,
             });
+            console.log('✅ Verify result:', result);
             await refreshUser();
-            toast.success(`🎉 Welcome to ${planKey.charAt(0).toUpperCase() + planKey.slice(1)}!`);
+            console.log('✅ User refreshed');
+            toast.success(`🎉 Welcome to Pro!`);
             navigate('/dashboard');
           } catch (e: any) {
+            console.error('❌ Verify error:', e);
+            console.error('❌ Verify error response:', e?.response?.data);
             toast.error(e?.response?.data?.error || 'Payment verification failed. Contact support.');
           }
           setProcessing(null);
         },
         prefill: { email: user.email, name: user.name },
         theme: { color: '#6366f1' },
-        modal: { ondismiss: () => setProcessing(null) },
+        modal: { ondismiss: () => { console.log('⚠️ Payment modal dismissed'); setProcessing(null); } },
       });
 
-      rzp.on('payment.failed', () => {
+      rzp.on('payment.failed', (resp: any) => {
+        console.error('❌ Payment failed:', resp);
         toast.error('Payment failed. Please try again.');
         setProcessing(null);
       });
 
       rzp.open();
     } catch (e: any) {
+      console.error('❌ Order creation error:', e);
       toast.error(e?.response?.data?.error || 'Could not initiate payment. Please try again.');
       setProcessing(null);
     }
   };
-
-  const userLevel = LEVELS[user?.plan || 'free'];
 
   return (
     <div className="min-h-screen bg-[#080810] pt-20 pb-16 px-4">
@@ -161,7 +143,7 @@ const Pricing = () => {
         <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[700px] h-[500px] bg-indigo-600/5 rounded-full blur-3xl" />
       </div>
 
-      <div className="max-w-5xl mx-auto relative">
+      <div className="max-w-3xl mx-auto relative">
         {/* Header */}
         <div className="text-center mb-14">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 mb-6 rounded-full text-xs font-semibold text-indigo-300" style={{ background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)' }}>
@@ -169,7 +151,7 @@ const Pricing = () => {
             One-time payment — No subscriptions ever
           </div>
           <h1 className="text-5xl font-black text-white mb-4 tracking-tight">
-            Affordable for Every Student
+            Simple, Honest Pricing
           </h1>
           <p className="text-zinc-400 text-lg max-w-xl mx-auto">
             Less than a cup of chai. Pay once, use forever. No hidden fees.
@@ -191,31 +173,27 @@ const Pricing = () => {
           {user && (
             <div className="mt-5">
               <span className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-semibold border ${
-                user.plan === 'premium' ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400' :
                 user.plan === 'pro' ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-400' :
                 'bg-white/5 border-white/10 text-zinc-400'
               }`}>
-                {user.plan === 'premium' ? '👑' : user.plan === 'pro' ? '⚡' : '🆓'}
+                {user.plan === 'pro' ? '⚡' : '🆓'}
                 Current plan: {user.plan.toUpperCase()}
               </span>
             </div>
           )}
         </div>
 
-        {/* Plan cards */}
-        <div className="grid md:grid-cols-3 gap-6 items-start mb-12">
+        {/* Plan cards — 2 columns centered */}
+        <div className="grid md:grid-cols-2 gap-6 items-start mb-12 max-w-2xl mx-auto">
           {plans.map(plan => {
-            const planLevel = LEVELS[plan.key];
             const isCurrentPlan = user?.plan === plan.key;
-            const canUpgrade = planLevel > userLevel;
+            const canUpgrade = plan.key === 'pro' && user?.plan === 'free';
             const isLoading = processing === plan.key;
-            const isDisabled = isCurrentPlan || (!canUpgrade && plan.key !== 'free') || (plan.key === 'free' && !!user);
+            const isDisabled = isCurrentPlan || (plan.key === 'free' && !!user) || (plan.key === 'pro' && user?.plan === 'pro');
 
             return (
               <div key={plan.key} className={`relative rounded-2xl p-7 flex flex-col transition-all duration-200 ${
-                plan.highlight
-                  ? 'shadow-2xl shadow-indigo-500/15'
-                  : 'hover:translate-y-[-2px]'
+                plan.highlight ? 'shadow-2xl shadow-indigo-500/15' : 'hover:translate-y-[-2px]'
               }`} style={{
                 background: plan.highlight ? 'rgba(99,102,241,0.06)' : 'rgba(255,255,255,0.02)',
                 border: plan.highlight ? '1px solid rgba(99,102,241,0.4)' : '1px solid rgba(255,255,255,0.08)',
@@ -223,9 +201,7 @@ const Pricing = () => {
 
                 {/* Tags */}
                 {plan.tag && !isCurrentPlan && (
-                  <div className={`absolute -top-3.5 left-1/2 -translate-x-1/2 px-4 py-1 text-xs font-bold rounded-full text-white ${
-                    plan.highlight ? 'bg-indigo-600' : 'bg-yellow-500'
-                  }`}>
+                  <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 px-4 py-1 text-xs font-bold rounded-full text-white bg-indigo-600">
                     {plan.tag}
                   </div>
                 )}
@@ -243,12 +219,7 @@ const Pricing = () => {
                   </div>
                   <div className="flex items-end gap-1.5 mb-1">
                     <span className="text-5xl font-black text-white">{plan.price}</span>
-                    {plan.price !== '₹0' && (
-                      <span className="text-zinc-500 text-sm mb-2">/ {plan.period}</span>
-                    )}
-                    {plan.price === '₹0' && (
-                      <span className="text-zinc-500 text-sm mb-2">/ {plan.period}</span>
-                    )}
+                    <span className="text-zinc-500 text-sm mb-2">/ {plan.period}</span>
                   </div>
                   <p className="text-zinc-500 text-sm">{plan.desc}</p>
                 </div>
@@ -269,7 +240,7 @@ const Pricing = () => {
                 <button
                   onClick={() => {
                     if (plan.key === 'free' && !user) navigate('/signup');
-                    else if (plan.key !== 'free' && canUpgrade) handleUpgrade(plan.key);
+                    else if (plan.key === 'pro' && canUpgrade) handleUpgrade(plan.key);
                   }}
                   disabled={isDisabled || isLoading}
                   className={`w-full py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${
@@ -337,7 +308,7 @@ const Pricing = () => {
           <p className="text-zinc-500 text-xs">
             PCI DSS compliant · SSL encrypted · No card details stored
             <br />
-            Questions? <a href="mailto:support@recruitiq.ai" className="text-indigo-400 hover:text-indigo-300 transition-colors">support@recruitiq.ai</a>
+            Questions? <a href="mailto:vinaisolution@gmail.com" className="text-indigo-400 hover:text-indigo-300 transition-colors">vinaisolution@gmail.com</a>
           </p>
         </div>
       </div>
