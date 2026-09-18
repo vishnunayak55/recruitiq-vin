@@ -4,7 +4,7 @@ import crypto from 'crypto';
 import { authenticate, AuthenticatedRequest } from '../middleware/auth';
 import { supabase } from '../utils/db';
 import { extractTextFromBuffer, validateResumeText } from '../services/resumeParser';
-import { aiProvider } from '../providers/anthropic';
+import { aiProvider, calculateATSScore } from '../providers/anthropic';
 
 const router = Router();
 
@@ -41,7 +41,6 @@ const normalize = (a: any) => ({
   deep_score: a.deep_score ? safeParse(a.deep_score, null) : null,
 });
 
-// SHA-256 hash helper
 const hashBuffer = (buf: Buffer): string =>
   crypto.createHash('sha256').update(buf).digest('hex');
 
@@ -50,7 +49,6 @@ router.post('/upload', authenticate, upload.single('resume'), async (req: Authen
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
-    // Fresh user from DB
     const { data: dbUser } = await supabase
       .from('users')
       .select('plan, analyses_count')
@@ -66,21 +64,9 @@ router.post('/upload', authenticate, upload.single('resume'), async (req: Authen
       });
     }
 
-    // ── Duplicate detection (two-layer) ─────────────────────────────────────
-    //
-    // Layer 1: file_hash — exact byte match. Requires SQL migration.
-    //          If column missing, returns no rows and falls through silently.
-    //
-    // Layer 2: text_hash — content match. Works without migration.
-    //          Same resume content = same hash = same result returned.
-    //          This is what guarantees consistent scores for the same resume.
-    //
-    // Both layers are per-user — users never see each other's analyses.
-    // ────────────────────────────────────────────────────────────────────────
-
     const fileHash = hashBuffer(req.file.buffer);
 
-    // Layer 1 — file hash
+    // Layer 1 — file hash duplicate check
     const { data: existingByFileHash } = await supabase
       .from('resumes')
       .select('id')
@@ -108,7 +94,7 @@ router.post('/upload', authenticate, upload.single('resume'), async (req: Authen
       }
     }
 
-    // Layer 2 — text content hash (extract text early for this check)
+    // Extract text
     let extractedText: string;
     try {
       extractedText = await extractTextFromBuffer(req.file.buffer, req.file.mimetype);
@@ -119,6 +105,7 @@ router.post('/upload', authenticate, upload.single('resume'), async (req: Authen
 
     const textHash = hashBuffer(Buffer.from(extractedText.trim().toLowerCase()));
 
+    // Layer 2 — text hash duplicate check
     const { data: existingByTextHash } = await supabase
       .from('resumes')
       .select('id')
@@ -146,7 +133,7 @@ router.post('/upload', authenticate, upload.single('resume'), async (req: Authen
       }
     }
 
-    // ── Save resume row ──────────────────────────────────────────────────────
+    // Save resume row
     const resumeInsertData: any = {
       user_id: req.user!.id,
       file_name: req.file.originalname,
@@ -154,7 +141,6 @@ router.post('/upload', authenticate, upload.single('resume'), async (req: Authen
       extracted_text: extractedText,
     };
 
-    // Try inserting with both hashes; fall back gracefully if columns missing
     let resumeRow: any = null;
 
     const { data: rowFull, error: errFull } = await supabase
@@ -185,7 +171,7 @@ router.post('/upload', authenticate, upload.single('resume'), async (req: Authen
       resumeRow = rowFull;
     }
 
-    // ── AI Analysis ──────────────────────────────────────────────────────────
+    // AI Analysis — extracts data only, no scoring
     let aiResult: any;
     try {
       aiResult = await aiProvider.analyzeResume(extractedText);
@@ -197,12 +183,17 @@ router.post('/upload', authenticate, upload.single('resume'), async (req: Authen
       });
     }
 
-    if (typeof aiResult.overall_score !== 'number' || !aiResult.breakdown) {
+    if (!aiResult.sections) {
       await supabase.from('resumes').delete().eq('id', resumeRow.id);
       return res.status(503).json({ error: 'AI returned an invalid response. Please try again.' });
     }
 
-    // Deep score — non-blocking, best effort
+    // Calculate score mathematically — consistent every time
+    const { overall_score, breakdown } = calculateATSScore(aiResult);
+
+    console.log(`✅ Mathematical ATS Score: ${overall_score}/100`, breakdown);
+
+    // Deep score — non-blocking
     let deepScore: any = null;
     try { deepScore = await aiProvider.generateResumeScore(extractedText); } catch {}
 
@@ -210,13 +201,13 @@ router.post('/upload', authenticate, upload.single('resume'), async (req: Authen
       user_id: req.user!.id,
       resume_id: resumeRow.id,
       file_name: req.file.originalname,
-      overall_score: aiResult.overall_score,
-      keywords_score: aiResult.breakdown?.keywords || 0,
-      skills_score: aiResult.breakdown?.skills || 0,
-      experience_score: aiResult.breakdown?.experience || 0,
-      formatting_score: aiResult.breakdown?.formatting || 0,
-      education_score: aiResult.breakdown?.education || 0,
-      job_relevance_score: aiResult.breakdown?.job_relevance || 0,
+      overall_score,
+      keywords_score: breakdown.keywords,
+      skills_score: breakdown.skills,
+      experience_score: breakdown.experience,
+      formatting_score: breakdown.formatting,
+      education_score: breakdown.education,
+      job_relevance_score: breakdown.job_relevance,
       strengths: aiResult.strengths || [],
       weaknesses: aiResult.weaknesses || [],
       recommendations: aiResult.recommendations || [],
@@ -258,7 +249,6 @@ router.post('/upload', authenticate, upload.single('resume'), async (req: Authen
       throw aErr;
     }
 
-    // Increment analyses count
     await supabase
       .from('users')
       .update({ analyses_count: dbUser.analyses_count + 1 })
@@ -377,9 +367,9 @@ router.post('/:id/interview-questions', authenticate, async (req: AuthenticatedR
       .from('users').select('plan').eq('id', req.user!.id).single();
 
     if (!user || user.plan === 'free')
-      return res.status(403).json({ error: 'Interview prep requires Pro or Premium plan', upgradeRequired: true });
+      return res.status(403).json({ error: 'Interview prep requires Pro plan', upgradeRequired: true });
 
-    const count = user.plan === 'premium' ? 8 : 4;
+    const count = 4;
 
     const { data: analysis } = await supabase
       .from('resume_analyses')
@@ -422,7 +412,7 @@ router.post('/:id/career-roadmap', authenticate, async (req: AuthenticatedReques
       .from('users').select('plan').eq('id', req.user!.id).single();
 
     if (!user || user.plan === 'free')
-      return res.status(403).json({ error: 'Career roadmap requires Pro or Premium plan', upgradeRequired: true });
+      return res.status(403).json({ error: 'Career roadmap requires Pro plan', upgradeRequired: true });
 
     const { target_role } = req.body;
     if (!target_role || !target_role.trim())
