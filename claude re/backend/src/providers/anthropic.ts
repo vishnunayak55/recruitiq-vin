@@ -25,7 +25,6 @@ const repairJSON = (text: string): string => {
   const opens: string[] = [];
   let inString = false;
   let escape = false;
-
   for (const ch of s) {
     if (escape) { escape = false; continue; }
     if (ch === '\\' && inString) { escape = true; continue; }
@@ -35,43 +34,32 @@ const repairJSON = (text: string): string => {
     else if (ch === '[') opens.push(']');
     else if (ch === '}' || ch === ']') opens.pop();
   }
-
   if (inString) s += '"';
   for (const close of opens.reverse()) s += close;
   return s;
 };
 
 const cleanJSON = (text: string): string => {
-  let cleaned = text
-    .replace(/```json\s*/gi, '')
-    .replace(/```\s*/g, '')
-    .trim();
-
+  let cleaned = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
   const firstObject = cleaned.indexOf('{');
   const firstArray = cleaned.indexOf('[');
   let start = -1;
-
   if (firstObject === -1) start = firstArray;
   else if (firstArray === -1) start = firstObject;
   else start = Math.min(firstObject, firstArray);
-
   if (start > 0) cleaned = cleaned.substring(start);
   return cleaned.trim();
 };
 
 const callGemini = async (prompt: string): Promise<string> => {
   const override = process.env.GEMINI_MODEL?.trim();
-  const modelsToTry = override
-    ? [override, ...MODELS.filter((m) => m !== override)]
-    : MODELS;
-
+  const modelsToTry = override ? [override, ...MODELS.filter((m) => m !== override)] : MODELS;
   let lastError: any = null;
 
   for (const modelName of modelsToTry) {
     try {
       console.log(`🤖 Trying model: ${modelName}`);
       const model = genAI.getGenerativeModel({ model: modelName });
-
       const result = await model.generateContent({
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         generationConfig: {
@@ -80,13 +68,10 @@ const callGemini = async (prompt: string): Promise<string> => {
           maxOutputTokens: 8192,
         },
       });
-
       const text = result.response.text();
       console.log(`✅ Model ${modelName} worked`);
       process.env.GEMINI_MODEL = modelName;
-
       let cleaned = cleanJSON(text);
-
       try {
         JSON.parse(cleaned);
       } catch {
@@ -100,17 +85,10 @@ const callGemini = async (prompt: string): Promise<string> => {
           continue;
         }
       }
-
       return cleaned;
     } catch (e: any) {
       const msg = e?.message || String(e);
-      if (
-        msg.includes('fetch failed') ||
-        msg.includes('ECONNREFUSED') ||
-        msg.includes('ETIMEDOUT') ||
-        msg.includes('ENOTFOUND') ||
-        msg.includes('EAI_AGAIN')
-      ) {
+      if (msg.includes('fetch failed') || msg.includes('ECONNREFUSED') || msg.includes('ETIMEDOUT') || msg.includes('ENOTFOUND') || msg.includes('EAI_AGAIN')) {
         throw new Error('Cannot connect to Google AI API. Please check your internet connection and GEMINI_API_KEY.');
       }
       console.warn(`⚠️ Model ${modelName} failed, trying next...`);
@@ -118,8 +96,79 @@ const callGemini = async (prompt: string): Promise<string> => {
       lastError = e;
     }
   }
-
   throw lastError || new Error('No Gemini model is available. Please check your GEMINI_API_KEY and GEMINI_MODEL.');
+};
+
+
+// ==========================================
+// MATHEMATICAL ATS SCORE CALCULATOR
+// This ensures same resume = same score always
+// ==========================================
+export const calculateATSScore = (data: any): {
+  overall_score: number;
+  breakdown: {
+    keywords: number;
+    skills: number;
+    experience: number;
+    formatting: number;
+    education: number;
+    job_relevance: number;
+  };
+} => {
+  // KEYWORDS (max 25)
+  // Based on actual matched keywords count
+  const matchedKeywords = Array.isArray(data.matched_keywords) ? data.matched_keywords.length : 0;
+  const missingKeywords = Array.isArray(data.missing_keywords) ? data.missing_keywords.length : 0;
+  const totalKeywords = matchedKeywords + missingKeywords;
+  const keywordsRatio = totalKeywords > 0 ? matchedKeywords / totalKeywords : 0;
+  const keywords = Math.round(keywordsRatio * 25);
+
+  // SKILLS (max 20)
+  // Based on skills section presence + number of skills
+  const hasSkillsSection = data.sections?.skills === true ? 1 : 0;
+  const skillsCount = matchedKeywords; // proxy for skills found
+  const skillsBase = hasSkillsSection * 10;
+  const skillsBonus = Math.min(10, Math.floor(skillsCount / 2));
+  const skills = Math.min(20, skillsBase + skillsBonus);
+
+  // EXPERIENCE (max 20)
+  // Based on experience section + content length proxy
+  const hasExperience = data.sections?.experience === true ? 1 : 0;
+  const hasSummary = data.sections?.summary === true ? 1 : 0;
+  const experienceBase = hasExperience * 14;
+  const experienceBonus = hasSummary * 6;
+  const experience = Math.min(20, experienceBase + experienceBonus);
+
+  // FORMATTING (max 15)
+  // Based on how many sections are present
+  const sections = data.sections || {};
+  const sectionCount = [
+    sections.contact,
+    sections.summary,
+    sections.experience,
+    sections.education,
+    sections.skills,
+  ].filter(Boolean).length;
+  const formatting = Math.round((sectionCount / 5) * 15);
+
+  // EDUCATION (max 10)
+  // Based on education section presence
+  const hasEducation = data.sections?.education === true ? 1 : 0;
+  const education = hasEducation * 10;
+
+  // JOB RELEVANCE (max 10)
+  // This is the only AI-influenced score — but clamped to 0-10
+  const rawJobRelevance = typeof data.breakdown?.job_relevance === 'number'
+    ? data.breakdown.job_relevance
+    : 5;
+  const job_relevance = Math.min(10, Math.max(0, Math.round(rawJobRelevance)));
+
+  const overall_score = Math.min(100, keywords + skills + experience + formatting + education + job_relevance);
+
+  return {
+    overall_score,
+    breakdown: { keywords, skills, experience, formatting, education, job_relevance },
+  };
 };
 
 
@@ -127,13 +176,14 @@ class GeminiProvider implements AIProvider {
 
   // ==========================================
   // RESUME ATS ANALYSIS
+  // AI extracts data only — score calculated mathematically
   // ==========================================
   async analyzeResume(resumeText: string): Promise<AnalysisResult> {
     const raw = await callGemini(`
 You are a strict ATS resume analyst.
 Analyze ONLY the resume text provided below.
 Do NOT invent, assume, or hallucinate any information.
-Every score must come directly from what is written in the resume.
+Extract ONLY what is actually written in the resume.
 
 RESUME TO ANALYZE:
 ---
@@ -143,15 +193,6 @@ ${resumeText.substring(0, 4000)}
 Return ONLY valid JSON:
 
 {
-  "overall_score": <integer 0-100, exact sum of all 6 breakdown scores>,
-  "breakdown": {
-    "keywords": <integer 0-25>,
-    "skills": <integer 0-20>,
-    "experience": <integer 0-20>,
-    "formatting": <integer 0-15>,
-    "education": <integer 0-10>,
-    "job_relevance": <integer 0-10>
-  },
   "strengths": [
     "<specific strength found in THIS resume>",
     "<specific strength found in THIS resume>",
@@ -168,27 +209,41 @@ Return ONLY valid JSON:
     "<specific actionable recommendation for THIS resume>",
     "<specific actionable recommendation for THIS resume>"
   ],
-  "missing_keywords": ["<keyword genuinely missing from this resume>"],
+  "missing_keywords": ["<important keyword genuinely missing from this resume>"],
   "matched_keywords": ["<keyword actually found in this resume>"],
-  "ats_compatible": <true or false>,
-  "summary": "<2-3 sentences about THIS specific resume>",
+  "ats_compatible": <true if resume has clear sections and proper formatting, false otherwise>,
+  "summary": "<2-3 sentences about THIS specific resume based only on what is written>",
   "sections": {
-    "contact": <true or false>,
-    "summary": <true or false>,
-    "experience": <true or false>,
-    "education": <true or false>,
-    "skills": <true or false>
+    "contact": <true if contact info is present, false otherwise>,
+    "summary": <true if professional summary is present, false otherwise>,
+    "experience": <true if work experience section is present, false otherwise>,
+    "education": <true if education section is present, false otherwise>,
+    "skills": <true if skills section is present, false otherwise>
+  },
+  "breakdown": {
+    "job_relevance": <integer 0-10, how relevant the resume content is to a professional role>
   }
 }
 
 CRITICAL:
 - Return ONLY JSON. No markdown.
 - Use ONLY information from the resume.
-- Do not invent skills or experience.
-- overall_score MUST equal the exact sum of all 6 breakdown scores.
-- Be consistent — same resume must always get same score.
+- Do not invent skills, keywords or experience.
+- Be consistent — same resume must always return same data.
+- matched_keywords must be keywords ACTUALLY found in the resume text.
+- missing_keywords must be important keywords NOT found in the resume.
 `);
-    return JSON.parse(raw) as AnalysisResult;
+
+    const aiData = JSON.parse(raw);
+
+    // Calculate score mathematically for consistency
+    const { overall_score, breakdown } = calculateATSScore(aiData);
+
+    return {
+      ...aiData,
+      overall_score,
+      breakdown,
+    } as AnalysisResult;
   }
 
 
@@ -297,11 +352,14 @@ CRITICAL:
   // ==========================================
   async generateCareerRoadmap(resumeText: string, targetRole: string): Promise<any> {
     const raw = await callGemini(`
-Create a detailed career roadmap for someone who wants to become a "${targetRole}".
-Analyze the resume to identify current skill level and gaps.
-Generate a structured roadmap from Beginner to Intermediate to Advanced.
+You are a career coach. Create a complete learning roadmap for someone who wants to become a "${targetRole}".
 
-RESUME:
+IMPORTANT: The roadmap MUST start from ABSOLUTE ZERO — assume the person knows NOTHING about this field.
+Phase 1 must cover the most basic fundamentals a complete beginner needs on day 1.
+Each phase must build naturally on the previous one.
+This roadmap must work for ANY role the user enters — not just tech roles.
+
+RESUME (use this only to understand their current background):
 ${resumeText.substring(0, 2000)}
 
 TARGET ROLE: ${targetRole}
@@ -312,20 +370,29 @@ Return ONLY valid JSON:
   "current_level": "<actual current role or level from resume>",
   "target_role": "${targetRole}",
   "estimated_time": "<realistic total timeline e.g. 6-12 months>",
-  "gap_analysis": "<specific gaps identified>",
+  "gap_analysis": "<what they need to learn to become a ${targetRole} based on their resume>",
   "milestones": [
     {
       "phase": 1,
       "level": "Beginner",
-      "title": "Foundation — Core Concepts",
+      "title": "Absolute Basics — Zero to Hello World",
       "duration": "1-2 months",
-      "skills_to_learn": ["<fundamental skill 1>", "<skill 2>", "<skill 3>"],
-      "actions": ["<concrete beginner action>", "<build a simple project>", "<action>"],
+      "skills_to_learn": [
+        "<the most fundamental skill a complete beginner needs for ${targetRole}>",
+        "<basic skill 2>",
+        "<basic skill 3>"
+      ],
+      "actions": [
+        "<action a complete beginner can do on day 1>",
+        "<action 2>",
+        "<action 3>"
+      ],
       "resources": [
-        { "name": "GeeksforGeeks", "url": "https://www.geeksforgeeks.org", "type": "article" },
+        { "name": "GeeksforGeeks — ${targetRole} Tutorial", "url": "https://www.geeksforgeeks.org", "type": "article" },
         { "name": "freeCodeCamp", "url": "https://www.freecodecamp.org", "type": "course" },
         { "name": "W3Schools", "url": "https://www.w3schools.com", "type": "reference" },
-        { "name": "YouTube", "url": "https://www.youtube.com", "type": "video" }
+        { "name": "Corey Schafer — YouTube", "url": "https://www.youtube.com/@coreyms", "type": "video" },
+        { "name": "Traversy Media — YouTube", "url": "https://www.youtube.com/@TraversyMedia", "type": "video" }
       ]
     },
     {
@@ -333,13 +400,22 @@ Return ONLY valid JSON:
       "level": "Intermediate",
       "title": "Building — Real Projects",
       "duration": "2-3 months",
-      "skills_to_learn": ["<intermediate skill 1>", "<skill 2>", "<skill 3>"],
-      "actions": ["<build a real project>", "<contribute to open source>", "<action>"],
+      "skills_to_learn": [
+        "<intermediate skill 1 that builds on phase 1>",
+        "<intermediate skill 2>",
+        "<intermediate skill 3>"
+      ],
+      "actions": [
+        "<build a small real project using phase 1 skills>",
+        "<action 2>",
+        "<action 3>"
+      ],
       "resources": [
         { "name": "GeeksforGeeks", "url": "https://www.geeksforgeeks.org", "type": "article" },
-        { "name": "Coursera", "url": "https://www.coursera.org", "type": "course" },
+        { "name": "Coursera — Free Courses", "url": "https://www.coursera.org", "type": "course" },
         { "name": "Udemy", "url": "https://www.udemy.com", "type": "course" },
-        { "name": "GitHub", "url": "https://www.github.com", "type": "practice" }
+        { "name": "GitHub", "url": "https://www.github.com", "type": "practice" },
+        { "name": "Fireship — YouTube", "url": "https://www.youtube.com/@Fireship", "type": "video" }
       ]
     },
     {
@@ -347,27 +423,52 @@ Return ONLY valid JSON:
       "level": "Advanced",
       "title": "Mastery — Industry Ready",
       "duration": "2-4 months",
-      "skills_to_learn": ["<advanced skill 1>", "<skill 2>", "<skill 3>"],
-      "actions": ["<build a production-level project>", "<apply for jobs>", "<action>"],
+      "skills_to_learn": [
+        "<advanced skill 1 needed to get a job as ${targetRole}>",
+        "<advanced skill 2>",
+        "<advanced skill 3>"
+      ],
+      "actions": [
+        "<build a production-level project that can go in portfolio>",
+        "<action 2>",
+        "<action 3>"
+      ],
       "resources": [
         { "name": "GeeksforGeeks", "url": "https://www.geeksforgeeks.org", "type": "article" },
         { "name": "LeetCode", "url": "https://www.leetcode.com", "type": "practice" },
         { "name": "Official Documentation", "url": "https://www.google.com", "type": "docs" },
-        { "name": "Medium", "url": "https://www.medium.com", "type": "article" }
+        { "name": "Medium — Tech Articles", "url": "https://www.medium.com", "type": "article" },
+        { "name": "Tech With Tim — YouTube", "url": "https://www.youtube.com/@TechWithTim", "type": "video" }
       ]
     }
   ],
-  "certifications": ["<relevant certification 1>", "<certification 2>"],
-  "salary_range": "<realistic salary range in INR in India>",
-  "key_companies": ["<top company hiring for this role in India>"],
-  "top_skills_needed": ["<skill 1>", "<skill 2>", "<skill 3>", "<skill 4>", "<skill 5>"]
+  "certifications": [
+    "<most relevant FREE certification for ${targetRole}>",
+    "<second certification — can be paid but popular>"
+  ],
+  "salary_range": "<realistic salary range in INR for ${targetRole} in India>",
+  "key_companies": [
+    "<top Indian company hiring for ${targetRole}>",
+    "<top MNC hiring for ${targetRole} in India>",
+    "<startup hiring for ${targetRole}>"
+  ],
+  "top_skills_needed": [
+    "<most important skill for ${targetRole}>",
+    "<skill 2>",
+    "<skill 3>",
+    "<skill 4>",
+    "<skill 5>"
+  ]
 }
 
 CRITICAL:
-- Return ONLY valid JSON.
-- Make roadmap specific to "${targetRole}".
-- Skills must progress logically from beginner to advanced.
-- Base current level on actual resume content.
+- Return ONLY valid JSON. No markdown.
+- Phase 1 MUST start from ABSOLUTE ZERO basics.
+- Skills in each phase must build logically on the previous phase.
+- Resources must include real YouTube channel links.
+- Certifications must be real and relevant — include at least one free option.
+- Salary range must be realistic for India in INR.
+- Make everything specific to "${targetRole}".
 `);
     return JSON.parse(raw);
   }
