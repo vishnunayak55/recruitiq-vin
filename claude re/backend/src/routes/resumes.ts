@@ -190,7 +190,6 @@ router.post('/upload', authenticate, upload.single('resume'), async (req: Authen
 
     // Calculate score mathematically — consistent every time
     const { overall_score, breakdown } = calculateATSScore(aiResult);
-
     console.log(`✅ Mathematical ATS Score: ${overall_score}/100`, breakdown);
 
     // Deep score — non-blocking
@@ -451,9 +450,7 @@ router.post('/:id/career-roadmap', authenticate, async (req: AuthenticatedReques
   }
 });
 
-export default router;
-
-// POST /api/resumes/:id/rewrite
+// POST /api/resumes/:id/rewrite — PRO FEATURE
 router.post('/:id/rewrite', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { data: user } = await supabase
