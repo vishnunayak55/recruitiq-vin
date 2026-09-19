@@ -196,8 +196,8 @@ Return ONLY valid JSON:
     "<specific actionable recommendation for THIS resume>",
     "<specific actionable recommendation for THIS resume>"
   ],
-  "missing_keywords": ["<important keyword genuinely missing from this resume>"],
-  "matched_keywords": ["<keyword actually found in this resume>"],
+  "missing_keywords": ["<important PROFESSIONAL keyword genuinely missing from this resume — e.g. specific technologies, frameworks, tools, programming languages>"],
+  "matched_keywords": ["<PROFESSIONAL keyword actually found — ONLY count specific technologies, programming languages, frameworks, tools, certifications, methodologies e.g. Python, React, SQL, AWS, Docker, Agile. DO NOT count generic words like 'computers', 'MS Office', 'internet', 'teamwork', 'hardworking', 'fast learner', 'communication'>"],
   "ats_compatible": <true if resume has clear sections and proper formatting, false otherwise>,
   "summary": "<2-3 sentences about THIS specific resume>",
   "sections": {
@@ -216,8 +216,9 @@ CRITICAL:
 - Return ONLY JSON. No markdown.
 - Use ONLY information from the resume.
 - Do not invent skills, keywords or experience.
-- matched_keywords: list EVERY professional keyword, tool, technology, skill name actually found in the resume text.
-- missing_keywords: list important professional keywords NOT found in the resume.
+- matched_keywords: ONLY list specific professional keywords — technologies, programming languages, frameworks, tools, certifications. e.g. Python, JavaScript, React, Node.js, SQL, AWS, Docker, Git, Agile, REST API. NEVER include generic words like "computers", "MS Office", "internet browsing", "teamwork", "hardworking", "fast learner", "PowerPoint", "basic coding".
+- missing_keywords: list important PROFESSIONAL keywords NOT found in the resume that a recruiter would look for.
+- A resume with only generic skills like MS Office and basic coding should have 0-2 matched_keywords maximum.
 - Be thorough with matched_keywords — this directly affects the ATS score.
 `);
 
