@@ -116,23 +116,27 @@ export const calculateATSScore = (data: any): {
     job_relevance: number;
   };
 } => {
-  // KEYWORDS (max 25) — ratio of matched vs total
+  // KEYWORDS (max 25) — ratio of matched vs total, weighted heavily
   const matchedKeywords = Array.isArray(data.matched_keywords) ? data.matched_keywords.length : 0;
   const missingKeywords = Array.isArray(data.missing_keywords) ? data.missing_keywords.length : 0;
   const totalKeywords = matchedKeywords + missingKeywords;
   const keywordsRatio = totalKeywords > 0 ? matchedKeywords / totalKeywords : 0;
-  const keywords = Math.round(keywordsRatio * 25);
+  // Penalty if very few matched keywords (weak resume)
+  const keywordPenalty = matchedKeywords < 3 ? 0.4 : matchedKeywords < 6 ? 0.7 : 1;
+  const keywords = Math.round(keywordsRatio * 25 * keywordPenalty);
 
-  // SKILLS (max 20) — skills section + keyword count
+  // SKILLS (max 20) — keyword count is the main driver, not just section presence
   const hasSkillsSection = data.sections?.skills === true ? 1 : 0;
-  const skillsBase = hasSkillsSection * 10;
-  const skillsBonus = Math.min(10, Math.floor(matchedKeywords / 2));
-  const skills = Math.min(20, skillsBase + skillsBonus);
+  const skillsBase = hasSkillsSection * 5; // reduced from 10 to 5
+  const skillsBonus = Math.min(15, matchedKeywords * 1.5); // keyword count drives this
+  const skills = Math.min(20, Math.round(skillsBase + skillsBonus));
 
-  // EXPERIENCE (max 20) — experience + summary sections
+  // EXPERIENCE (max 20) — experience section + summary, but penalize weak content
   const hasExperience = data.sections?.experience === true ? 1 : 0;
   const hasSummary = data.sections?.summary === true ? 1 : 0;
-  const experience = Math.min(20, (hasExperience * 14) + (hasSummary * 6));
+  // If very few keywords, experience content is probably weak too
+  const expQualityFactor = matchedKeywords < 4 ? 0.5 : matchedKeywords < 8 ? 0.75 : 1;
+  const experience = Math.min(20, Math.round(((hasExperience * 14) + (hasSummary * 6)) * expQualityFactor));
 
   // FORMATTING (max 15) — sections present out of 5
   const sections = data.sections || {};
@@ -143,7 +147,7 @@ export const calculateATSScore = (data: any): {
   const education = data.sections?.education === true ? 10 : 0;
 
   // JOB RELEVANCE (max 10) — only AI score, clamped
-  const rawJobRelevance = typeof data.breakdown?.job_relevance === 'number' ? data.breakdown.job_relevance : 5;
+  const rawJobRelevance = typeof data.breakdown?.job_relevance === 'number' ? data.breakdown.job_relevance : 3;
   const job_relevance = Math.min(10, Math.max(0, Math.round(rawJobRelevance)));
 
   const overall_score = Math.min(100, keywords + skills + experience + formatting + education + job_relevance);
