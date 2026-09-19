@@ -81,7 +81,7 @@ const callGemini = async (prompt: string): Promise<string> => {
         try {
           JSON.parse(cleaned);
         } catch {
-          console.warn('⚠️ JSON repair was unsuccessful. Trying next model...');
+          console.warn('⚠️ JSON repair unsuccessful. Trying next model...');
           lastError = new Error(`Gemini returned invalid JSON from model ${modelName}`);
           continue;
         }
@@ -103,7 +103,7 @@ const callGemini = async (prompt: string): Promise<string> => {
 
 // ==========================================
 // MATHEMATICAL ATS SCORE CALCULATOR
-// This ensures same resume = same score always
+// Same resume = same score always
 // ==========================================
 export const calculateATSScore = (data: any): {
   overall_score: number;
@@ -116,52 +116,34 @@ export const calculateATSScore = (data: any): {
     job_relevance: number;
   };
 } => {
-  // KEYWORDS (max 25)
-  // Based on actual matched keywords count
+  // KEYWORDS (max 25) — ratio of matched vs total
   const matchedKeywords = Array.isArray(data.matched_keywords) ? data.matched_keywords.length : 0;
   const missingKeywords = Array.isArray(data.missing_keywords) ? data.missing_keywords.length : 0;
   const totalKeywords = matchedKeywords + missingKeywords;
   const keywordsRatio = totalKeywords > 0 ? matchedKeywords / totalKeywords : 0;
   const keywords = Math.round(keywordsRatio * 25);
 
-  // SKILLS (max 20)
-  // Based on skills section presence + number of skills
+  // SKILLS (max 20) — skills section + keyword count
   const hasSkillsSection = data.sections?.skills === true ? 1 : 0;
-  const skillsCount = matchedKeywords; // proxy for skills found
   const skillsBase = hasSkillsSection * 10;
-  const skillsBonus = Math.min(10, Math.floor(skillsCount / 2));
+  const skillsBonus = Math.min(10, Math.floor(matchedKeywords / 2));
   const skills = Math.min(20, skillsBase + skillsBonus);
 
-  // EXPERIENCE (max 20)
-  // Based on experience section + content length proxy
+  // EXPERIENCE (max 20) — experience + summary sections
   const hasExperience = data.sections?.experience === true ? 1 : 0;
   const hasSummary = data.sections?.summary === true ? 1 : 0;
-  const experienceBase = hasExperience * 14;
-  const experienceBonus = hasSummary * 6;
-  const experience = Math.min(20, experienceBase + experienceBonus);
+  const experience = Math.min(20, (hasExperience * 14) + (hasSummary * 6));
 
-  // FORMATTING (max 15)
-  // Based on how many sections are present
+  // FORMATTING (max 15) — sections present out of 5
   const sections = data.sections || {};
-  const sectionCount = [
-    sections.contact,
-    sections.summary,
-    sections.experience,
-    sections.education,
-    sections.skills,
-  ].filter(Boolean).length;
+  const sectionCount = [sections.contact, sections.summary, sections.experience, sections.education, sections.skills].filter(Boolean).length;
   const formatting = Math.round((sectionCount / 5) * 15);
 
-  // EDUCATION (max 10)
-  // Based on education section presence
-  const hasEducation = data.sections?.education === true ? 1 : 0;
-  const education = hasEducation * 10;
+  // EDUCATION (max 10) — education section present
+  const education = data.sections?.education === true ? 10 : 0;
 
-  // JOB RELEVANCE (max 10)
-  // This is the only AI-influenced score — but clamped to 0-10
-  const rawJobRelevance = typeof data.breakdown?.job_relevance === 'number'
-    ? data.breakdown.job_relevance
-    : 5;
+  // JOB RELEVANCE (max 10) — only AI score, clamped
+  const rawJobRelevance = typeof data.breakdown?.job_relevance === 'number' ? data.breakdown.job_relevance : 5;
   const job_relevance = Math.min(10, Math.max(0, Math.round(rawJobRelevance)));
 
   const overall_score = Math.min(100, keywords + skills + experience + formatting + education + job_relevance);
@@ -213,13 +195,13 @@ Return ONLY valid JSON:
   "missing_keywords": ["<important keyword genuinely missing from this resume>"],
   "matched_keywords": ["<keyword actually found in this resume>"],
   "ats_compatible": <true if resume has clear sections and proper formatting, false otherwise>,
-  "summary": "<2-3 sentences about THIS specific resume based only on what is written>",
+  "summary": "<2-3 sentences about THIS specific resume>",
   "sections": {
-    "contact": <true if contact info is present, false otherwise>,
-    "summary": <true if professional summary is present, false otherwise>,
-    "experience": <true if work experience section is present, false otherwise>,
-    "education": <true if education section is present, false otherwise>,
-    "skills": <true if skills section is present, false otherwise>
+    "contact": <true if contact info present, false otherwise>,
+    "summary": <true if professional summary present, false otherwise>,
+    "experience": <true if work experience section present, false otherwise>,
+    "education": <true if education section present, false otherwise>,
+    "skills": <true if skills section present, false otherwise>
   },
   "breakdown": {
     "job_relevance": <integer 0-10, how relevant the resume content is to a professional role>
@@ -230,14 +212,12 @@ CRITICAL:
 - Return ONLY JSON. No markdown.
 - Use ONLY information from the resume.
 - Do not invent skills, keywords or experience.
-- Be consistent — same resume must always return same data.
-- matched_keywords must be keywords ACTUALLY found in the resume text.
-- missing_keywords must be important keywords NOT found in the resume.
+- matched_keywords: list EVERY professional keyword, tool, technology, skill name actually found in the resume text.
+- missing_keywords: list important professional keywords NOT found in the resume.
+- Be thorough with matched_keywords — this directly affects the ATS score.
 `);
 
     const aiData = JSON.parse(raw);
-
-    // Calculate score mathematically for consistency
     const { overall_score, breakdown } = calculateATSScore(aiData);
 
     return {
@@ -305,9 +285,9 @@ that are SPECIFICALLY tailored to this candidate's actual resume.
 STRICT RULES:
 - Read the resume carefully and extract: actual skills, tools, projects, experience, and education.
 - Every question MUST reference something actually written in the resume.
-- Do NOT ask generic questions like "Tell me about yourself" or "Where do you see yourself in 5 years".
+- Do NOT ask generic questions like "Tell me about yourself".
 - Do NOT repeat similar questions.
-- Mix question types: technical (based on actual skills), behavioral (based on actual experience), situational (based on actual projects).
+- Mix types: technical (actual skills), behavioral (actual experience), situational (actual projects).
 - Difficulty should progress: start easy, get harder.
 
 RESUME:
@@ -327,7 +307,7 @@ Return ONLY a valid JSON array with exactly ${safeCount} items:
     "id": 1,
     "type": "technical",
     "difficulty": "easy",
-    "question": "<specific question referencing an actual skill/project/tool from the resume>",
+    "question": "<specific question referencing actual skill/project/tool from resume>",
     "why_asked": "<why this is relevant to THIS candidate specifically>",
     "tip": "<specific tip for answering based on their resume>"
   }
@@ -337,9 +317,8 @@ Allowed types: technical, behavioral, situational
 Allowed difficulties: easy, medium, hard
 
 CRITICAL:
-- Every question must be UNIQUE.
-- Every question must reference something ACTUALLY in the resume.
-- Return ONLY valid JSON array — no markdown, no extra text.
+- Every question must be UNIQUE and reference something ACTUALLY in the resume.
+- Return ONLY valid JSON array. No markdown.
 - Generate exactly ${safeCount} questions.
 `);
 
@@ -349,18 +328,21 @@ CRITICAL:
 
 
   // ==========================================
-  // CAREER ROADMAP
+  // CAREER ROADMAP — ABSOLUTE BEGINNER START
   // ==========================================
   async generateCareerRoadmap(resumeText: string, targetRole: string): Promise<any> {
     const raw = await callGemini(`
 You are a career coach. Create a complete learning roadmap for someone who wants to become a "${targetRole}".
 
-IMPORTANT: The roadmap MUST start from ABSOLUTE ZERO — assume the person knows NOTHING about this field.
-Phase 1 must cover the most basic fundamentals a complete beginner needs on day 1.
-Each phase must build naturally on the previous one.
-This roadmap must work for ANY role the user enters — not just tech roles.
+VERY IMPORTANT RULES:
+- Phase 1 MUST be for a complete ABSOLUTE BEGINNER — someone who has ZERO knowledge of ${targetRole}.
+- Phase 1 must start with the very first thing a beginner does on DAY 1 — e.g. installing tools, writing first program, understanding basic concepts.
+- DO NOT start with intermediate or advanced topics in Phase 1.
+- Timeline per phase should be short and realistic — 1-2 months per phase MAX.
+- Total timeline should be 4-8 months, NOT 12-18 months.
+- Salary range must be realistic for FRESHERS in India — entry level, not senior.
 
-RESUME (use this only to understand their current background):
+RESUME (use only to understand current background, NOT to skip beginner phases):
 ${resumeText.substring(0, 2000)}
 
 TARGET ROLE: ${targetRole}
@@ -368,93 +350,93 @@ TARGET ROLE: ${targetRole}
 Return ONLY valid JSON:
 
 {
-  "current_level": "<actual current role or level from resume>",
+  "current_level": "<actual current level from resume>",
   "target_role": "${targetRole}",
-  "estimated_time": "<realistic total timeline e.g. 6-12 months>",
-  "gap_analysis": "<what they need to learn to become a ${targetRole} based on their resume>",
+  "estimated_time": "<4-8 months total — keep it short and achievable>",
+  "gap_analysis": "<what they need to learn>",
   "milestones": [
     {
       "phase": 1,
       "level": "Beginner",
-      "title": "Absolute Basics — Zero to Hello World",
+      "title": "Day 1 Basics — Setup & Hello World",
       "duration": "1-2 months",
       "skills_to_learn": [
-        "<the most fundamental skill a complete beginner needs for ${targetRole}>",
-        "<basic skill 2>",
-        "<basic skill 3>"
+        "<absolute first skill — e.g. for Python: Install Python, understand variables and data types>",
+        "<second beginner skill — e.g. loops, conditions, functions>",
+        "<third beginner skill — e.g. basic problem solving>"
       ],
       "actions": [
-        "<action a complete beginner can do on day 1>",
-        "<action 2>",
-        "<action 3>"
+        "<literally the first thing to do — e.g. Download and install Python from python.org>",
+        "<second action — e.g. Complete Python for Everybody course on Coursera (free audit)>",
+        "<third action — e.g. Solve 10 easy problems on HackerRank>"
       ],
       "resources": [
-        { "name": "GeeksforGeeks — ${targetRole} Tutorial", "url": "https://www.geeksforgeeks.org", "type": "article" },
-        { "name": "freeCodeCamp", "url": "https://www.freecodecamp.org", "type": "course" },
+        { "name": "GeeksforGeeks ${targetRole} Basics", "url": "https://www.geeksforgeeks.org", "type": "article" },
+        { "name": "freeCodeCamp Full Course", "url": "https://www.freecodecamp.org", "type": "course" },
         { "name": "W3Schools", "url": "https://www.w3schools.com", "type": "reference" },
-        { "name": "Corey Schafer — YouTube", "url": "https://www.youtube.com/@coreyms", "type": "video" },
-        { "name": "Traversy Media — YouTube", "url": "https://www.youtube.com/@TraversyMedia", "type": "video" }
+        { "name": "Corey Schafer YouTube", "url": "https://www.youtube.com/@coreyms", "type": "video" },
+        { "name": "Traversy Media YouTube", "url": "https://www.youtube.com/@TraversyMedia", "type": "video" }
       ]
     },
     {
       "phase": 2,
       "level": "Intermediate",
-      "title": "Building — Real Projects",
+      "title": "Core Skills — Build Real Things",
       "duration": "2-3 months",
       "skills_to_learn": [
-        "<intermediate skill 1 that builds on phase 1>",
-        "<intermediate skill 2>",
-        "<intermediate skill 3>"
+        "<skill that builds on phase 1 — more advanced but not expert level>",
+        "<second intermediate skill>",
+        "<third intermediate skill>"
       ],
       "actions": [
-        "<build a small real project using phase 1 skills>",
-        "<action 2>",
-        "<action 3>"
+        "<build a small project using phase 1 skills>",
+        "<second action>",
+        "<third action>"
       ],
       "resources": [
         { "name": "GeeksforGeeks", "url": "https://www.geeksforgeeks.org", "type": "article" },
-        { "name": "Coursera — Free Courses", "url": "https://www.coursera.org", "type": "course" },
+        { "name": "Coursera Free Courses", "url": "https://www.coursera.org", "type": "course" },
         { "name": "Udemy", "url": "https://www.udemy.com", "type": "course" },
         { "name": "GitHub", "url": "https://www.github.com", "type": "practice" },
-        { "name": "Fireship — YouTube", "url": "https://www.youtube.com/@Fireship", "type": "video" }
+        { "name": "Fireship YouTube", "url": "https://www.youtube.com/@Fireship", "type": "video" }
       ]
     },
     {
       "phase": 3,
       "level": "Advanced",
-      "title": "Mastery — Industry Ready",
-      "duration": "2-4 months",
+      "title": "Job Ready — Portfolio & Apply",
+      "duration": "1-2 months",
       "skills_to_learn": [
-        "<advanced skill 1 needed to get a job as ${targetRole}>",
-        "<advanced skill 2>",
-        "<advanced skill 3>"
+        "<advanced skill needed for job>",
+        "<second advanced skill>",
+        "<third advanced skill>"
       ],
       "actions": [
-        "<build a production-level project that can go in portfolio>",
-        "<action 2>",
-        "<action 3>"
+        "<build a portfolio project>",
+        "<apply for internships or junior roles>",
+        "<practice DSA on LeetCode>"
       ],
       "resources": [
         { "name": "GeeksforGeeks", "url": "https://www.geeksforgeeks.org", "type": "article" },
         { "name": "LeetCode", "url": "https://www.leetcode.com", "type": "practice" },
-        { "name": "Official Documentation", "url": "https://www.google.com", "type": "docs" },
-        { "name": "Medium — Tech Articles", "url": "https://www.medium.com", "type": "article" },
-        { "name": "Tech With Tim — YouTube", "url": "https://www.youtube.com/@TechWithTim", "type": "video" }
+        { "name": "Official Docs", "url": "https://www.google.com", "type": "docs" },
+        { "name": "Medium", "url": "https://www.medium.com", "type": "article" },
+        { "name": "Tech With Tim YouTube", "url": "https://www.youtube.com/@TechWithTim", "type": "video" }
       ]
     }
   ],
   "certifications": [
-    "<most relevant FREE certification for ${targetRole}>",
-    "<second certification — can be paid but popular>"
+    "<FREE certification — e.g. Google IT Support Certificate, Meta Front-End on Coursera>",
+    "<popular paid certification relevant to ${targetRole}>"
   ],
-  "salary_range": "<realistic salary range in INR for ${targetRole} in India>",
+  "salary_range": "<FRESHER salary in India in INR — e.g. ₹3-6 LPA for entry level>",
   "key_companies": [
-    "<top Indian company hiring for ${targetRole}>",
-    "<top MNC hiring for ${targetRole} in India>",
+    "<Indian company hiring freshers for ${targetRole}>",
+    "<MNC hiring freshers for ${targetRole} in India>",
     "<startup hiring for ${targetRole}>"
   ],
   "top_skills_needed": [
-    "<most important skill for ${targetRole}>",
+    "<most important skill>",
     "<skill 2>",
     "<skill 3>",
     "<skill 4>",
@@ -464,12 +446,11 @@ Return ONLY valid JSON:
 
 CRITICAL:
 - Return ONLY valid JSON. No markdown.
-- Phase 1 MUST start from ABSOLUTE ZERO basics.
-- Skills in each phase must build logically on the previous phase.
-- Resources must include real YouTube channel links.
-- Certifications must be real and relevant — include at least one free option.
-- Salary range must be realistic for India in INR.
+- Phase 1 is for ABSOLUTE BEGINNERS — Day 1 setup and basics only.
+- Total timeline MUST be 4-8 months, not 12-18 months.
+- Salary MUST be fresher/entry-level range in INR.
 - Make everything specific to "${targetRole}".
+- Resources must include real YouTube channels, not just youtube.com.
 `);
     return JSON.parse(raw);
   }
@@ -513,7 +494,6 @@ CRITICAL:
 `);
     return JSON.parse(raw);
   }
-}
 
 
   // ==========================================
@@ -527,8 +507,8 @@ RULES:
 - Use strong action verbs (Developed, Built, Optimized, Led, Achieved, Reduced, Increased)
 - Add metrics and numbers wherever possible (even estimated ones like "~30%")
 - Keep the same meaning but make it sound more impactful
-- Do NOT invent technologies or experience that are not in the resume
-- Rewrite ONLY the weak or vague lines — skip lines that are already strong
+- Do NOT invent technologies or experience not in the resume
+- Rewrite ONLY weak or vague lines — skip lines already strong
 
 RESUME:
 ---
@@ -542,7 +522,7 @@ Return ONLY valid JSON:
     {
       "original": "<exact weak line from the resume>",
       "rewritten": "<improved version with action verb and metric>",
-      "improvement": "<one line explaining what was improved e.g. Added metric, stronger verb>"
+      "improvement": "<one line explaining what was improved>"
     }
   ],
   "summary_rewrite": {
