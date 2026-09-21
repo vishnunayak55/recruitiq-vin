@@ -1,14 +1,39 @@
 import mammoth from 'mammoth';
-import pdfParse from 'pdf-parse';
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.js';
+
+// Disable worker for Node.js environment
+pdfjsLib.GlobalWorkerOptions.workerSrc = '';
 
 export const extractTextFromBuffer = async (buffer: Buffer, mimetype: string): Promise<string> => {
   if (mimetype === 'application/pdf') {
     try {
-      const data = await pdfParse(buffer);
-      if (!data.text || data.text.trim().length < 50) {
-        throw new Error('Could not extract readable text from PDF. Please ensure the PDF contains selectable text.');
+      const uint8Array = new Uint8Array(buffer);
+      const loadingTask = pdfjsLib.getDocument({
+        data: uint8Array,
+        useWorkerFetch: false,
+        isEvalSupported: false,
+        useSystemFonts: true,
+      });
+      const pdf = await loadingTask.promise;
+      const numPages = pdf.numPages;
+      const textParts: string[] = [];
+
+      for (let i = 1; i <= numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        const pageText = content.items
+          .map((item: any) => item.str)
+          .join(' ');
+        textParts.push(pageText);
       }
-      return data.text.trim();
+
+      const text = textParts.join('\n').trim();
+
+      if (!text || text.length < 50) {
+        throw new Error('Could not extract readable text from PDF. Please ensure the PDF contains selectable text and is not scanned/image-based.');
+      }
+
+      return text;
     } catch (error: any) {
       throw new Error(`PDF parsing failed: ${error.message}`);
     }
